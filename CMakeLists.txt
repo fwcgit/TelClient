@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 2.8.6)
+project(smartclient)
+link_libraries("-lpthread")
+AUX_SOURCE_DIRECTORY(. DIR_SRCS)
+ADD_EXECUTABLE(client ${DIR_SRCS})
