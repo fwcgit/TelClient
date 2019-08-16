@@ -13,9 +13,7 @@
 #define MSG_TYPE_CMD    0x02 //执行指令
 #define MSG_TYPE_DATA   0x03 //数据
 #define MSG_TYPE_HEART  0x04 //心跳
-
-#define M_CK(mh) (char)(mh.type+mh.len&0xff)
-#define M_SIZE sizeof(package)-sizeof(void *)
+#define FRAME_HEAD_SIZE 8
 
 typedef struct m_head
 {
@@ -31,7 +29,6 @@ typedef struct m_package
     int         fd;
     void 		*data;
 }package;
-
 
 
 #endif /* msg_h */

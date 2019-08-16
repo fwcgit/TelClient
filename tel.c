@@ -19,6 +19,7 @@
 #include <sys/socket.h>
 #include "msg.h"
 #include <stdlib.h>
+#include "crc.h"
 
 char SERVER_ADDR[30];
 int  SERVER_PORT;
@@ -63,11 +64,10 @@ void* run_read_data(void *args)
     int exit_rv = 101;
     int ret;
     int datalen=0;
-    ssize_t firstDataOffset = 0;
     ssize_t totalSize = 0;
     struct timeval tout;
     fd_set fds;
-    char buff[128];
+    char buff[1024];
     ssize_t recvCount;
     package msg;
     char *data = NULL;
@@ -96,72 +96,79 @@ void* run_read_data(void *args)
                 if(FD_ISSET(sockFd,&fds))
                 {
                     memset(buff, 0, sizeof(buff));
-                    recvCount = recv(sockFd, buff, sizeof(buff), 0);
+                    recvCount = recv(sockFd, buff, FRAME_HEAD_SIZE, 0);
                     
                     handler_connect_statu(recvCount);
+                    
                     
                     if(recvCount > 0)
                     {
                         datalen = 0;
                         totalSize = 0;
-                        firstDataOffset = 0;
-                        
-                        if(recvCount >= sizeof(msg_head))
+
+                        totalSize += recvCount;
+                        while(totalSize < FRAME_HEAD_SIZE)
                         {
-                            printf("firset recvCount %ld %s\r\n",recvCount,buff);
-                            memcpy(&msg, buff, sizeof(msg_head));
-                            datalen = msg.head.len;
-                            
-                            if(datalen > 0)
+                            recvCount = recv(sockFd, buff+totalSize, 1, 0);
+                            if(recvCount <= 0)
                             {
-                                data = (char *)malloc(sizeof(char) * (datalen));
-                                if(NULL == data)
-                                {
-                                    printf("malloc mem fail \r\n");
-                                }
-                                memset(data, 0, datalen);
-                                firstDataOffset = recvCount - (sizeof(package)-sizeof(void *));
-                                memcpy(data, buff+sizeof(package)-sizeof(void *), firstDataOffset);
-                            }
-                            
-                            while(firstDataOffset+totalSize < datalen)
-                            {
-                                recvCount = recv(sockFd, data+firstDataOffset+totalSize, 1024, 0);
-                                printf("firset recvCount %ld %s ----\r\n",recvCount,buff);
-                                if(recvCount <= 0)
-                                {
-                                    break;
-                                }
-                                else
-                                {
-                                    totalSize+=recvCount;
-                                }
-                            }
-                            
-                            
-                            if(firstDataOffset+9 >= datalen)
-                            {
-                                
-                                printf("clinet recv data %s firstDataOffset:%ld totalSize:%ld\n",data,firstDataOffset,totalSize);
-                                free(data);
-                                data = NULL;
-                            }
+                                break;
+                            } 
+                           totalSize += recvCount;
                         }
-                        
-                       
-                        if(strcmp(buff, "reqCode") == 0)
+
+                        if(recvCount == FRAME_HEAD_SIZE)
                         {
-                            memset((char *)&msg, 0, sizeof(msg));
-                            msg.head.type = MSG_TYPE_ID;
-                            msg.head.len   = 10;
-                            msg.head.ck = M_CK(msg.head);
-                            msg.data = malloc(sizeof(char)*(M_SIZE+msg.head.len));
-                            memset(msg.data, 0, M_SIZE+msg.head.len);
-                            pack_data(msg.data, &msg, M_SIZE,"Print0001", msg.head.len);
-                            send_data(msg.data, M_SIZE+msg.head.len);
-                            free(msg.data);
-                            is_send_heartbeat = 1;
-                        }
+                            if(*buff == (unsigned char)0x3b)
+                            {
+                                uint16 crc = *(buff+6) & 0x00ff;
+                                crc <<= 8;
+                                crc |= *(buff+7);
+
+                                uint16 code_crc = CRC16(buff,FRAME_HEAD_SIZE-2);
+                                if(crc == code_crc)
+                                {
+                                    datalen =  *(buff+1) & 0x000000ff;
+                                    datalen <<= 8;
+                                    datalen |= *(buff+2);
+                                    datalen <<= 8;
+                                    datalen |= *(buff+3);
+                                    datalen <<= 8;
+                                    datalen |= *(buff+4);
+
+                                    while(totalSize < datalen)
+                                    {
+                                        recvCount = recv(sockFd, buff+totalSize, datalen, 0);
+                                        if(recvCount <= 0)
+                                        {
+                                            break;
+                                        } 
+                                       totalSize += recvCount;
+                                    }
+
+                                    if(totalSize == datalen)
+                                    {
+                                        uint16 crc_data = *(buff+(datalen-2)) &0x00ff;
+                                        crc_data <<= 8;
+                                        crc_data |=  *(buff+(datalen-2));
+                                        uint16 crc_data_code = CRC16(buff+FRAME_HEAD_SIZE,datalen -2-FRAME_HEAD_SIZE);
+                                        if(crc_data == crc_data_code)
+                                        {
+                                            printf("recv %s Len:%ld\n",data,datalen);
+                                            char *data = (char *)malloc(sizeof(char) * (datalen -2-FRAME_HEAD_SIZE));
+                                            memcpy(data,buff+FRAME_HEAD_SIZE,datalen-2-FRAME_HEAD_SIZE);
+                                            if(strcmp(data, "reqCode") == 0)
+                                            {
+
+                                            }
+                                            free(data);
+                                        }
+                                       
+                                    }
+                                }
+                            }
+                        }  
+ 
                         
                     }
                 }
@@ -316,6 +323,20 @@ void stop_heartbeat_thread(void)
     pthread_join(heartbeatPid, (void *)&rv);
     
     printf("stop_heartbeat_thread rv : %d \n",rv);
+}
+
+char *encode_msg(char type,char *data,int len)
+{
+    char *msg = malloc(sizeof(char) * (FRAME_HEAD_SIZE+len+2));
+    int data_len = FRAME_HEAD_SIZE+len+2;
+    *msg = 0x3b;
+    *(msg+1) = (data_len >> 24) & 0xff;
+    *(msg+2) = (data_len >> 16) & 0xff;
+    *(msg+3) = (data_len >> 8) & 0xff;
+    *(msg+4) = (data_len >> 0) & 0xff;
+    *(msg+5) = type;
+    uin
+    
 }
 
 void send_data(char *data,int len)
