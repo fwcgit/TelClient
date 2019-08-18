@@ -21,6 +21,7 @@
 #include <stdlib.h>
 #include "crc.h"
 
+
 char SERVER_ADDR[30];
 int  SERVER_PORT;
 int  sockFd;
@@ -59,6 +60,20 @@ void handler_connect_statu(long statu)
     }
 }
 
+void printOldData(char *data,ssize_t len)
+{
+#if 1
+    int i = 0;
+    if(NULL != data && len > 0){
+        for(i = 0; i < len; i++)
+        {
+                printf("%02X------",*(data+i));
+        }
+    }
+    printf("--------------------\r\n");
+ #endif
+}
+
 void* run_read_data(void *args)
 {
     int exit_rv = 101;
@@ -77,9 +92,10 @@ void* run_read_data(void *args)
     
     while(isReadRun)
     {
+        
         if(isConnect)
         {
-            
+            printf("read\n");
             FD_ZERO(&fds);
             FD_SET(sockFd,&fds);
             
@@ -89,7 +105,7 @@ void* run_read_data(void *args)
             {
                 tout.tv_usec = 0;
                 tout.tv_sec  = 1;
-                printf("read select timout\n");
+                //printf("read select timout\n");
             }
             else if(ret > 0)
             {
@@ -100,7 +116,7 @@ void* run_read_data(void *args)
                     
                     handler_connect_statu(recvCount);
                     
-                    
+                    printf("recvCount %ld -----\r\n",recvCount);
                     if(recvCount > 0)
                     {
                         datalen = 0;
@@ -110,32 +126,36 @@ void* run_read_data(void *args)
                         while(totalSize < FRAME_HEAD_SIZE)
                         {
                             recvCount = recv(sockFd, buff+totalSize, 1, 0);
+                            printf("FRAME_HEAD_SIZE \r\n");
                             if(recvCount <= 0)
                             {
                                 break;
                             } 
                            totalSize += recvCount;
                         }
-
+                    printf("recvCount %ld ++++++\r\n",recvCount);
                         if(recvCount == FRAME_HEAD_SIZE)
                         {
-                            if(*buff == (unsigned char)0x3b)
+                            printOldData(buff,recvCount);
+                            if(*buff == 0x3b)
                             {
-                                uint16 crc = *(buff+6) & 0x00ff;
+                                printf("0x3b \r\n");
+                                unsigned short crc = *(buff+6) & 0x00ff;
                                 crc <<= 8;
-                                crc |= *(buff+7);
-
-                                uint16 code_crc = CRC16(buff,FRAME_HEAD_SIZE-2);
+                                crc |= *(buff+7)& 0x00ff;;
+                                unsigned short code_crc = CRC16((unsigned char *)buff,FRAME_HEAD_SIZE-2);
+                                printf("crc%d  code_crc %d\r\n",crc,code_crc);
                                 if(crc == code_crc)
                                 {
                                     datalen =  *(buff+1) & 0x000000ff;
                                     datalen <<= 8;
-                                    datalen |= *(buff+2);
+                                    datalen |= *(buff+2)& 0x000000ff;;
                                     datalen <<= 8;
-                                    datalen |= *(buff+3);
+                                    datalen |= *(buff+3)& 0x000000ff;;
                                     datalen <<= 8;
-                                    datalen |= *(buff+4);
+                                    datalen |= *(buff+4)& 0x000000ff;;
 
+                                    printf("datalen%d \r\n",datalen);
                                     while(totalSize < datalen)
                                     {
                                         recvCount = recv(sockFd, buff+totalSize, datalen, 0);
@@ -148,18 +168,27 @@ void* run_read_data(void *args)
 
                                     if(totalSize == datalen)
                                     {
-                                        uint16 crc_data = *(buff+(datalen-2)) &0x00ff;
-                                        crc_data <<= 8;
-                                        crc_data |=  *(buff+(datalen-2));
-                                        uint16 crc_data_code = CRC16(buff+FRAME_HEAD_SIZE,datalen -2-FRAME_HEAD_SIZE);
-                                        if(crc_data == crc_data_code)
+                                        printf("totalSize%ld \r\n",totalSize);
+                                        printOldData(buff,datalen);
+                                        char s0 = *(buff+(datalen-2));
+                                        char s1 = *(buff+(datalen-1));
+                                        printf("%X %X \r\n",s0,s1);
+                                        unsigned short data_crc = 0;
+                                        data_crc = *(buff+(datalen-2)) & 0x00ff;
+                                        data_crc <<= 8;
+                                        data_crc |= *(buff+(datalen-1))& 0x00ff;
+                                        unsigned short crc_data_code = CRC16((unsigned char *)(buff+FRAME_HEAD_SIZE),datalen -2-FRAME_HEAD_SIZE);
+                                        printf("crc_data%d  crc_data_code %d\r\n",data_crc,crc_data_code);
+
+                                        if(data_crc == crc_data_code)
                                         {
-                                            printf("recv %s Len:%ld\n",data,datalen);
                                             char *data = (char *)malloc(sizeof(char) * (datalen -2-FRAME_HEAD_SIZE));
                                             memcpy(data,buff+FRAME_HEAD_SIZE,datalen-2-FRAME_HEAD_SIZE);
+                                            printf("recv %s Len:%d\n",data,datalen-2-FRAME_HEAD_SIZE);
                                             if(strcmp(data, "reqCode") == 0)
                                             {
-
+                                                send_data_pack(MSG_TYPE_ID,"Print0001", 9);
+                                                is_send_heartbeat = 1;
                                             }
                                             free(data);
                                         }
@@ -210,21 +239,13 @@ void* run_connect(void *args)
 void* run_heartbeat(void *args)
 {
     int rv = 102;
-    char key[sizeof(package)-sizeof(void*)+ 10] = {0};
-    package msg;
-    msg.head.type = MSG_TYPE_HEART;
-    msg.head.len = 10;
-    msg.head.ck = M_CK(msg.head);
-    msg.data = key;
-    memset(msg.data, 0, 10);
-    pack_data(msg.data, &msg, sizeof(package)-sizeof(void*), "Print0001", 9);
-    
+  
     while(isConnectRun)
     {
         if(isConnect && is_send_heartbeat)
         {
             printf("send heartbeat\r\n");
-            send_data(msg.data, msg.head.len + sizeof(package)-sizeof(void*));
+            send_data_pack(MSG_TYPE_HEART,"Print0001", 9);
         }
         
         sleep(5);
@@ -325,21 +346,29 @@ void stop_heartbeat_thread(void)
     printf("stop_heartbeat_thread rv : %d \n",rv);
 }
 
-char *encode_msg(char type,char *data,int len)
+
+int send_data_pack(char type,char *data,size_t len)
 {
-    char *msg = malloc(sizeof(char) * (FRAME_HEAD_SIZE+len+2));
-    int data_len = FRAME_HEAD_SIZE+len+2;
-    *msg = 0x3b;
-    *(msg+1) = (data_len >> 24) & 0xff;
-    *(msg+2) = (data_len >> 16) & 0xff;
-    *(msg+3) = (data_len >> 8) & 0xff;
-    *(msg+4) = (data_len >> 0) & 0xff;
-    *(msg+5) = type;
-    uin
-    
+        int data_len = FRAME_HEAD_SIZE+2+len;
+        char *user_data = (char *)malloc(sizeof(char) * data_len);
+        *user_data = 0x3b;
+        *(user_data+1) = (char)(data_len >> 24);
+        *(user_data+2) = (char)(data_len >> 16);
+        *(user_data+3) = (char)(data_len >> 8);
+        *(user_data+4) = (char)(data_len >> 0);
+        *(user_data+5) = type;
+        unsigned short crc_code = CRC16((unsigned char *)user_data,6);
+        *(user_data+6) = (char)(crc_code>>8);
+        *(user_data+7) = (char)(crc_code>>0);
+        unsigned short crc_data = CRC16((unsigned char *)data,len);
+        *(user_data+(data_len-2)) = (char)(crc_data>>8);
+        *(user_data+(data_len-1)) = (char)(crc_data>>0);
+        memcpy(user_data+FRAME_HEAD_SIZE,data,len);
+        int s_len = send_data(user_data,data_len);
+        return s_len;
 }
 
-void send_data(char *data,int len)
+int send_data(char *data,int len)
 {
     int ret;
     ssize_t sendRet;
@@ -363,13 +392,7 @@ void send_data(char *data,int len)
         sendRet = write(sockFd, data, len);
         handler_connect_statu(sendRet);
     }
-    
+
+   return ret; 
 }
 
-void pack_data(char *data,void *msg,size_t m_len,char *src,size_t s_len)
-{
-    if(NULL == data || NULL == msg || NULL == src) return;
-    
-    memcpy(data, msg, m_len);
-    memcpy(data+m_len, src, s_len);
-}

@@ -29,9 +29,9 @@ void stop_connect_thread(void);
 
 void start_connect_thread(void);
 
-void send_data(char *data,int len);
+int send_data_pack(char type,char *data,size_t len);
 
-void pack_data(char *data,void *msg,size_t m_len,char *src,size_t s_len);
+int send_data(char *data,int len);
 
 void start_heartbeat_thread(void);
 

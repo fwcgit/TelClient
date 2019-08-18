@@ -37,8 +37,8 @@ int main(int argc, const char * argv[]) {
     //printf("%d %d \r\n",sizeof(pk),sizeof(package));
     //start_tel("127.0.01",38888);
     //start_tel("103.119.2.35",38888);
-    //start_tel("192.168.193.151",38888);
-    start_tel("106.12.189.237",38888);
+    start_tel("192.168.193.157",38888);
+    //start_tel("106.12.189.237",38888);
     
 //    sleep(3);
     //send_data((char *)&pk, sizeof(pk.head.len));
