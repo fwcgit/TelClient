@@ -16,6 +16,7 @@
 #include "logfile.h"
 #include <signal.h>
 #include "msg.h"
+#include "usart.h"
 
 int main(int argc, const char * argv[]) {
     
@@ -33,11 +34,12 @@ int main(int argc, const char * argv[]) {
     pk.data = malloc(sizeof(char)*10);
     pk.head.len = sizeof(package) - sizeof(void *)+10;
     memcpy(pk.data, "abcdefghijk", 10);
-
+    int ret = open_usart("/dev/ttyUSB0");
+    printf("open usart ret %d \r\n",ret);
     //printf("%d %d \r\n",sizeof(pk),sizeof(package));
     //start_tel("127.0.01",38888);
     //start_tel("103.119.2.35",38888);
-    start_tel("192.168.193.157",38888);
+    start_tel("192.168.193.159",38888);
     //start_tel("106.12.189.237",38888);
     
 //    sleep(3);

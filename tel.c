@@ -20,7 +20,7 @@
 #include "msg.h"
 #include <stdlib.h>
 #include "crc.h"
-
+#include "usart.h"
 
 char SERVER_ADDR[30];
 int  SERVER_PORT;
@@ -185,20 +185,49 @@ void* run_read_data(void *args)
                                             char *data = (char *)malloc(sizeof(char) * (datalen -2-FRAME_HEAD_SIZE));
                                             memcpy(data,buff+FRAME_HEAD_SIZE,datalen-2-FRAME_HEAD_SIZE);
                                             printf("recv %s Len:%d\n",data,datalen-2-FRAME_HEAD_SIZE);
-                                            if(strcmp(data, "reqCode") == 0)
+                                            char type = *(buff+5);
+                                            if(type == MSG_TYPE_ID)
                                             {
-                                                send_data_pack(MSG_TYPE_ID,"Print0001", 9);
-                                                is_send_heartbeat = 1;
+                                                 if(strcmp(data, "reqCode") == 0)
+                                                {
+                                                    send_data_pack(MSG_TYPE_ID,"Print0001", 9);
+                                                    is_send_heartbeat = 1;
+                                                }
                                             }
+                                            else if(type == MSG_TYPE_CMD)
+                                            {
+
+                                            }
+                                            else if(type == MSG_TYPE_DATA)
+                                            {
+                                                printOldData(data,datalen -2-FRAME_HEAD_SIZE);
+                                                if(*data == (char)0xA0)
+                                                {
+                                                    printf("send ir data \r\n");
+                                                    u8 cmd[4];
+                                                    cmd[0] = 0x3B;
+                                                    cmd[1] = 0x0F;
+                                                    cmd[3] = 0x0D;
+                                                    if(*(data+1) == 0x10)
+                                                    {
+                                                         cmd[2] = 0xA0;
+                                                       
+                                                    }
+                                                    else if(*(data+1) == 0x11)
+                                                    {
+                                                        cmd[2] = 0xA1;
+                                                    }
+                                                    usart_send_data(cmd,4);
+                                                }
+                                            }
+                                           
                                             free(data);
                                         }
                                        
                                     }
                                 }
                             }
-                        }  
- 
-                        
+                        }     
                     }
                 }
             }
