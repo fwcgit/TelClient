@@ -11,7 +11,7 @@
 
 #include <stdio.h>
 
-#define MSG_LEN(msg,len) sizeof(msg)-sizeof(void *)+msg.head.len
+extern char *SELF_ID;
 
 extern char SERVER_ADDR[30];
 extern int  SERVER_PORT;

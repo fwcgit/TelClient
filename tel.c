@@ -22,6 +22,7 @@
 #include "crc.h"
 #include "usart.h"
 
+char *SELF_ID = "S0003";
 char SERVER_ADDR[30];
 int  SERVER_PORT;
 int  sockFd;
@@ -190,7 +191,7 @@ void* run_read_data(void *args)
                                             {
                                                  if(strcmp(data, "reqCode") == 0)
                                                 {
-                                                    send_data_pack(MSG_TYPE_ID,"Print0001", 9);
+                                                    send_data_pack(MSG_TYPE_ID,"", 0);
                                                     is_send_heartbeat = 1;
                                                 }
                                             }
@@ -274,7 +275,7 @@ void* run_heartbeat(void *args)
         if(isConnect && is_send_heartbeat)
         {
             printf("send heartbeat\r\n");
-            send_data_pack(MSG_TYPE_HEART,"Print0001", 9);
+            send_data_pack(MSG_TYPE_HEART,"", 0);
         }
         
         sleep(5);
@@ -378,21 +379,33 @@ void stop_heartbeat_thread(void)
 
 int send_data_pack(char type,char *data,size_t len)
 {
-        int data_len = FRAME_HEAD_SIZE+2+len;
-        char *user_data = (char *)malloc(sizeof(char) * data_len);
+        int data_len = FRAME_HEAD_SIZE+2+5+len;
+        char *user_data = (char *)malloc(sizeof(char) * (5+data_len));
         *user_data = 0x3b;
         *(user_data+1) = (char)(data_len >> 24);
         *(user_data+2) = (char)(data_len >> 16);
         *(user_data+3) = (char)(data_len >> 8);
         *(user_data+4) = (char)(data_len >> 0);
         *(user_data+5) = type;
+
         unsigned short crc_code = CRC16((unsigned char *)user_data,6);
         *(user_data+6) = (char)(crc_code>>8);
         *(user_data+7) = (char)(crc_code>>0);
-        unsigned short crc_data = CRC16((unsigned char *)data,len);
+
+        if(len > 0)
+        {
+            memcpy(user_data+FRAME_HEAD_SIZE,SELF_ID,5);
+            memcpy(user_data+FRAME_HEAD_SIZE+5,data,len);
+        }
+        else
+        {
+             memcpy(user_data+FRAME_HEAD_SIZE,SELF_ID,5);
+        }
+        
+        unsigned short crc_data = CRC16((unsigned char *)user_data+FRAME_HEAD_SIZE,len+5);
         *(user_data+(data_len-2)) = (char)(crc_data>>8);
         *(user_data+(data_len-1)) = (char)(crc_data>>0);
-        memcpy(user_data+FRAME_HEAD_SIZE,data,len);
+        
         int s_len = send_data(user_data,data_len);
         return s_len;
 }
